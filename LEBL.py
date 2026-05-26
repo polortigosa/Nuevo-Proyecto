@@ -19,10 +19,11 @@ class BoardingArea:
         self.gates = []
 
 class Gate:
-    def __init__(self, name):
+    def __init__(self, name, numero):
         self.name = name
         self.occupied = False
         self.aircraft_id =""
+        self.numero = numero
 
 def SetGates (area, init_gate, end_gate, prefix): #nombre de cada una de las puertas en una lista
     if end_gate <= init_gate:
@@ -30,9 +31,9 @@ def SetGates (area, init_gate, end_gate, prefix): #nombre de cada una de las pue
 
     area.gates = []#lista de las puertas
 
-    for number in range(init_gate, end_gate + 1): # +1 porque en el range no se tiene en cuenta el ultimio valor
-        gate_name = f"{prefix}{number}"# el nombe de cada puerta
-        gate = Gate(gate_name)
+    for numero in range(init_gate, end_gate + 1): # +1 porque en el range no se tiene en cuenta el ultimio valor
+        gate_name = f"{prefix}{numero}"# el nombe de cada puerta
+        gate = Gate(gate_name,numero)
         area.gates.append(gate)# mete en una lista, las puertas que hay metiendo en la lista toda la informacion en la clase
     return 0
 
@@ -195,11 +196,11 @@ def PlotTerminal_visual(bcn, name):
     area_col_x = [0.5 + area_spacing * i + area_spacing / 2 for i in range(num_areas)]
 
     trunk_width = 0.45  # Más grueso como en la foto
-    gate_w = 0.45  # Rectángulo de estado
+    gate_w = 0.9  # Rectángulo de estado
     gate_h = 0.25
     gate_arm_len = 0.6  # Longitud del brazo horizontal azul
     trunk_top_y = terminal_bar_y + 0.1  # Conexión perfecta con la barra superior
-    trunk_bot_y = 2.0
+    trunk_bot_y = 1.5
 
     for idx, area in enumerate(areas):
         cx = area_col_x[idx]  # Centro horizontal de esta boarding area
@@ -219,7 +220,7 @@ def PlotTerminal_visual(bcn, name):
             continue
 
         # Espacio disponible para los gates
-        usable_top = terminal_bar_y - 0.8
+        usable_top = terminal_bar_y - 0.6
         usable_bot = trunk_bot_y + 0.5
         usable_h = usable_top - usable_bot
 
@@ -246,27 +247,31 @@ def PlotTerminal_visual(bcn, name):
             else:
                 gate_color = '#5cb85c'  # Verde plano de la foto
 
+            # Ajustar ancho del rectángulo según el texto
+            current_gate_w = gate_w
+
+            if gate.occupied and gate.aircraft_id:
+                current_gate_w = 0.18 * len(gate.aircraft_id)
+
             # Rectángulo indicador de estado (separado un poquito del brazo)
-            gap = 0.15# separacion del cubo con el brazo
-            rect_x = arm_x_end + gap if side == 1 else arm_x_end - gate_w - gap
+            gap = 0.15 # separacion del cubo con el brazo
+            rect_x = arm_x_end + gap if side == 1 else arm_x_end - current_gate_w  - gap
 
             rect = mpatches.Rectangle(
-                (rect_x, gy - gate_h / 2), gate_w, gate_h,
+                (rect_x, gy - gate_h / 2), current_gate_w , gate_h,
                 linewidth=0, facecolor=gate_color, zorder=3)
             ax.add_patch(rect)
 
             # Nombre de la puerta justo encima del brazo horizontal
             label_x = arm_x_start + side * 0.1
             ha_align = 'left' if side == 1 else 'right'
-            ax.text(label_x, gy + 0.1, gate.name, ha=ha_align, va='bottom',
+            ax.text(label_x, gy +0.03,f"{gate.numero}G" , ha=ha_align, va='bottom',
                     fontsize=9, color='black', fontweight='normal', zorder=4)
 
             # Si está ocupado, el ID del avión (DALEN) se muestra en negro/gris al lado izquierdo del bloque rojo
             if gate.occupied and gate.aircraft_id:
-                id_x = rect_x - 0.1 if side == 1 else rect_x - 0.1  # Ajustado a la izquierda del rectángulo rojo
-                ax.text(id_x, gy, gate.aircraft_id,
-                        ha='right', va='center', fontsize=11,
-                        color='black', zorder=4)
+                id_x = rect_x + 0.1 if side == 1 else rect_x + current_gate_w  - 0.1  # Ajustado a la izquierda del rectángulo rojo
+                ax.text(id_x, gy, gate.aircraft_id, ha= 'left' if side == 1 else 'right' , va='center', fontsize= 9, color='black', zorder=4)
 
     plt.tight_layout()
     return fig
