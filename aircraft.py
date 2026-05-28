@@ -1,15 +1,20 @@
 
 import math
+
+
 from airport import *
 import matplotlib.pyplot as plt
 
 class Aircraft:
     def __init__(self, id , origin, time, company):
+    #def __init__(self, id, origin, time, company, destino, salida):
         self.id = id
         self.origin = origin
         self.time = time
         self.company = company
         self.schengen = False
+        #self.destino = destino
+        #self.salida = salida
 
 
 def LoadArrivals(filename):
@@ -264,3 +269,98 @@ def LongDistanceArrivals(aircrafts):
     return vuelos_largos
 
 
+# cambiar la clase de aircraft y poner la segunda, cambiar en todos los lugares donde se llama a la clase de aircraft
+    # porque como ahora tiene mas objetos, hay que ponerlos como vacios ( añadir : ,"","")
+    # porque hemos añadido destino y salida (hora en el q el avion se va)
+    
+#def LoadDepartures (filename):
+
+    try:
+        departures = []
+        with open(filename, "r") as F:
+            linea = F.readlines()
+            for j in linea[1:]:
+                lineas = j.strip()
+                datos = lineas.split()
+
+                if len(datos) != 4:
+                    continue
+
+                id = str(datos[0])
+                destino = datos[1]
+                salida = datos[2]
+                company = datos[3]
+
+                if len(destino) != 4 or len(company) != 3:
+                    continue
+
+                if ":" not in salida:
+                    continue
+
+                hora = salida.split(":")
+
+                if len(hora) != 2:
+                    continue
+                h = int(hora[0])
+                m = int(hora[1])
+                if not (0 <= h < 24 and 0 <= m < 60):
+                    continue
+
+                depart = Aircraft(id,"" ,"", company, destino, salida)#cambiar todos los Aircraft para poenr "" en la svariables no citadas
+                departures.append(depart)
+
+    except FileNotFoundError:
+        return  []
+    return departures
+
+#def MergeMovements(arrivals, departures):
+
+    # Error si alguna lista está vacía
+    if len(arrivals) == 0 or len(departures) == 0:
+        return -1
+
+    combinados = []
+    departures_usados = []
+
+    # Buscar coincidencias entre llegadas y salidas
+    for arrival in arrivals:
+        encontrado = False
+
+        for departure in departures:
+
+            if departure in departures_usados:
+                continue
+
+            if arrival.id == departure.id and arrival.time < departure.salida:# mismo avión y llegada antes que salida
+
+                aircraft = Aircraft(arrival.id, arrival.origin, arrival.time, arrival.company, departure.destino, departure.salida)
+                combinados.append(aircraft)
+                departures_usados.append(departure)
+
+                encontrado = True
+                break
+
+        # avión que llega pero no sale
+        if not encontrado:
+            aircraft = Aircraft(arrival.id, arrival.origin, arrival.time, arrival.company,"","")
+            combinados.append(aircraft)
+
+    # aviones nocturnos (salen pero no llegaron ese día)
+    for departure in departures:
+        if departure not in departures_usados:
+
+            aircraft = Aircraft(departure.id,"","", departure.company,departure.destino,departure.salida)
+            combinados.append(aircraft)
+
+    return combinados
+
+#def NightAircraft(aircrafts):
+    if len(aircrafts) == 0:
+        return -1
+
+    nocturnos = []
+    for aircraft in aircrafts:
+        if aircraft.origin == "" and aircraft.time == "":
+            nocturnos.append(aircraft)
+
+    return nocturnos
