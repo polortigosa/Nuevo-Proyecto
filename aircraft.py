@@ -1,4 +1,3 @@
-
 import math
 
 
@@ -6,16 +5,14 @@ from airport import *
 import matplotlib.pyplot as plt
 
 class Aircraft:
-    def __init__(self, id , origin, time, company):
-    #def __init__(self, id, origin, time, company, destino, salida):
+    def __init__(self, id , origin, time, company, destino="", salida=""):
         self.id = id
         self.origin = origin
         self.time = time
         self.company = company
         self.schengen = False
-        #self.destino = destino
-        #self.salida = salida
-
+        self.destino = destino
+        self.salida = salida
 
 def LoadArrivals(filename):
 
@@ -200,6 +197,7 @@ def MapFlights(aircrafts,airports):
     #coord de LEBL aeropuerto de llegada
     destination= Airport( "LEBL",41.29694444444444,  2.0783333333333336)
 
+    vuelos_largos = LongDistanceArrivals(airports)
 
     with open("flight_map.kml", "w") as f:
 
@@ -207,7 +205,7 @@ def MapFlights(aircrafts,airports):
         for a in aircrafts:
             airport_found = None
             SetSchengenAircrafts(a)
-            for ap in airports:
+            for ap in vuelos_largos:
                 if ap.icao_code == a.origin:
                     airport_found = ap
                     break
@@ -251,16 +249,16 @@ def haversine(lat1, lon1, lat2, lon2):
     return R * c
 
 
-def LongDistanceArrivals(aircrafts):
+def LongDistanceArrivals(airports):
     vuelos_largos = []
     lat_LEBL = 41.29694444444444
     lon_LEBL = 2.0783333333333336
 
-    if not aircrafts:
+    if not airports:
         print("Error, llista buida(LongsDistanceArrivals)")
         return []
 
-    for a in aircrafts:
+    for a in airports:
         if a.latitude != None and a.longitude != None:
             distancia = haversine(a.latitude, a.longitude, lat_LEBL, lon_LEBL)
             if distancia > 2000:
@@ -268,20 +266,14 @@ def LongDistanceArrivals(aircrafts):
 
     return vuelos_largos
 
-
-# cambiar la clase de aircraft y poner la segunda, cambiar en todos los lugares donde se llama a la clase de aircraft
-    # porque como ahora tiene mas objetos, hay que ponerlos como vacios ( añadir : ,"","")
-    # porque hemos añadido destino y salida (hora en el q el avion se va)
-    
-#def LoadDepartures (filename):
-
+def LoadDepartures(filename):
     try:
         departures = []
         with open(filename, "r") as F:
-            linea = F.readlines()
-            for j in linea[1:]:
-                lineas = j.strip()
-                datos = lineas.split()
+            lineas = F.readlines()
+            for j in lineas[1:]:
+                lineas_strip = j.strip()
+                datos = lineas_strip.split()
 
                 if len(datos) != 4:
                     continue
@@ -306,55 +298,48 @@ def LongDistanceArrivals(aircrafts):
                 if not (0 <= h < 24 and 0 <= m < 60):
                     continue
 
-                depart = Aircraft(id,"" ,"", company, destino, salida)#cambiar todos los Aircraft para poenr "" en la svariables no citadas
+                # Creamos el avión de salida dejando origen y llegada vacíos
+                depart = Aircraft(id, "", "", company, destino, salida)
                 departures.append(depart)
-
     except FileNotFoundError:
-        return  []
+        return []
     return departures
 
-#def MergeMovements(arrivals, departures):
-
-    # Error si alguna lista está vacía
+def MergeMovements(arrivals, departures):
     if len(arrivals) == 0 or len(departures) == 0:
         return -1
 
     combinados = []
     departures_usados = []
 
-    # Buscar coincidencias entre llegadas y salidas
+    # 1. Buscar correspondencias entre llegadas y salidas
     for arrival in arrivals:
         encontrado = False
-
         for departure in departures:
-
             if departure in departures_usados:
                 continue
 
-            if arrival.id == departure.id and arrival.time < departure.salida:# mismo avión y llegada antes que salida
-
+            # Mismo avión y la llegada es anterior a la salida
+            if arrival.id == departure.id and arrival.time < departure.salida:
                 aircraft = Aircraft(arrival.id, arrival.origin, arrival.time, arrival.company, departure.destino, departure.salida)
                 combinados.append(aircraft)
                 departures_usados.append(departure)
-
                 encontrado = True
                 break
 
-        # avión que llega pero no sale
+        # Si llegó pero no vuelve a salir ese día
         if not encontrado:
-            aircraft = Aircraft(arrival.id, arrival.origin, arrival.time, arrival.company,"","")
+            aircraft = Aircraft(arrival.id, arrival.origin, arrival.time, arrival.company, "", "")
             combinados.append(aircraft)
 
-    # aviones nocturnos (salen pero no llegaron ese día)
+    # 2. Añadir aviones nocturnos (salen pero no llegaron ese día)
     for departure in departures:
         if departure not in departures_usados:
-
-            aircraft = Aircraft(departure.id,"","", departure.company,departure.destino,departure.salida)
+            aircraft = Aircraft(departure.id, "", "", departure.company, departure.destino, departure.salida)
             combinados.append(aircraft)
-
     return combinados
 
-#def NightAircraft(aircrafts):
+def NightAircraft(aircrafts):
     if len(aircrafts) == 0:
         return -1
 
@@ -362,5 +347,4 @@ def LongDistanceArrivals(aircrafts):
     for aircraft in aircrafts:
         if aircraft.origin == "" and aircraft.time == "":
             nocturnos.append(aircraft)
-
     return nocturnos

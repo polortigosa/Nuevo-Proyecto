@@ -8,9 +8,11 @@ import matplotlib.pyplot as plt
 # DATOS GLOBALES de aircrafts y de airports
 llista_aeroports = []
 llista_vuelos = []
+llista_sortides = []
 
 bcn = None
 current_canvas = None
+gates_assignats = False  # només True després de prémer "Assignar vols a gates"
 
 #para Airport.py--------------------------------------------------------------------------------------------------------
 def carregar_aeroports():
@@ -49,12 +51,13 @@ def generar_mapa_vuelos():
 
 #para Aircraft.py---------------------------------------------------------------------------------------------------
 def carregar_vuelos():
-    global llista_vuelos
+    global llista_vuelos, gates_assignats
     nom_fitxer = filedialog.askopenfilename()
     if nom_fitxer:
         llista_vuelos = LoadArrivals(nom_fitxer)
         for a in llista_vuelos:
             SetSchengenAircrafts(a)
+        gates_assignats = False  # cal tornar a assignar amb els nous vols
         messagebox.showinfo("Èxit", f"S'han carregat {len(llista_vuelos)} vols .")
 
 def carregar_estructura_lebl():
@@ -69,28 +72,119 @@ def carregar_estructura_lebl():
 
 
 def assignar_vols_gates():
-    global bcn, llista_vuelos
+    global bcn, llista_vuelos, llista_sortides, gates_assignats
 
     # comprobar que todo esté cargado
     if not bcn:
         messagebox.showwarning("Atenció", "Primer has de carregar l'estructura LEBL.")
         return
-
     if not llista_vuelos:
         messagebox.showwarning("Atenció", "Primer has de carregar els vols.")
         return
+    if not llista_sortides:
+        messagebox.showwarning("Atenció", "Primer has de carregar els vols de sortida.")
+        return
+
+    # Combinar movimientos para la simulación completa
+    movements = MergeMovements(llista_vuelos, llista_sortides)
+    if movements == -1:
+        messagebox.showerror("Error", "No s'han pogut combinar els moviments.")
+        return
+
+    # Simulació completa de les 24h per comptar assignacions (sense modificar bcn permanentment)
+    # Guardem l'estat actual dels gates i fem reset temporal
+    ResetAirport(bcn)
+
+    nocturnos = NightAircraft(movements)
+    if nocturnos != -1:
+        AssignNightGates(bcn, nocturnos)
 
     assignats = 0
-    # asignar cada vuelo a un gate
-    for vuelo in llista_vuelos:
-        resultat = AssignGate(bcn, vuelo)
+    rebutjats = 0
+    for h in range(24):
+        rebutjats_hora = AssignGatesAtTime(bcn, movements, h)
+        rebutjats += rebutjats_hora
 
-        # si AssignGate devuelve algo válido
-        if resultat != -1:
-            assignats += 1
+    # Comptar quants gates han quedat assignats al final del dia
+    for terminal in bcn.terminals:
+        for area in terminal.boarding_areas:
+            for gate in area.gates:
+                if gate.occupied:
+                    assignats += 1
 
-    messagebox.showinfo("Assignació completada",f"S'han assignat {assignats} vols als gates.")
-# Parte de graficos  (EMBED)
+    # Tornem a resetejar perquè l'estat de bcn quedi net fins que es visualitzi
+    ResetAirport(bcn)
+    gates_assignats = True  # ara sí es pot visualitzar l'ocupació
+
+    messagebox.showinfo("Assignació completada",f"Simulació de les 24h completada.\n"f"Gates ocupats al final del dia: {assignats}\n"
+        f"Vols sense gate durant el dia: {rebutjats}\n\n"f"Ara pots veure la Terminal T1 o T2 amb el slider d'hores.")
+
+def carregar_sortides():
+    global llista_sortides, gates_assignats
+    nom_fitxer = filedialog.askopenfilename()
+    if nom_fitxer:
+        llista_sortides = LoadDepartures(nom_fitxer)
+        gates_assignats = False  # cal tornar a assignar amb les noves sortides
+        messagebox.showinfo("Èxit", f"S'han carregat {len(llista_sortides)} vols de sortida.")
+
+def executar_simulacio_dinamica():
+    global bcn, llista_vuelos, llista_sortides, gates_assignats
+    if not bcn:
+        messagebox.showwarning("Atenció", "Primer has de carregar l'estructura LEBL.")
+        return
+    if not llista_vuelos:
+        messagebox.showwarning("Atenció", "Primer has de carregar els vols diaris (arribades).")
+        return
+    if not llista_sortides:
+        messagebox.showwarning("Atenció", "Primer has de carregar els vols de sortida.")
+        return
+    if not gates_assignats:
+        messagebox.showwarning("Atenció", "Primer has de prémer 'Assignar vols a gates'.")
+        return
+
+    # Combinar arribades i sortides
+    movements = MergeMovements(llista_vuelos, llista_sortides)
+    if movements == -1:
+        messagebox.showerror("Error", "No s'han pogut combinar els moviments.")
+        return
+
+    # Mostrar el gràfic evolutiu en el panell central
+    fig = PlotDayOccupancy(bcn, movements)
+    mostrar_figura(fig)
+    messagebox.showinfo("Simulació Completada", "S'ha generat l'evolució de l'ocupació de les portes.")
+
+
+def executar_control_tower():
+    global bcn, llista_vuelos, llista_sortides, gates_assignats
+
+    if not bcn:
+        messagebox.showwarning("Atenció", "Primer has de carregar l'estructura LEBL.")
+        return
+    if not llista_vuelos:
+        messagebox.showwarning("Atenció", "Primer has de carregar els vols diaris.")
+        return
+    if not llista_sortides:
+        messagebox.showwarning("Atenció", "Primer has de carregar els vols de sortida.")
+        return
+    if not gates_assignats:
+        messagebox.showwarning("Atenció", "Primer has de prémer 'Assignar vols a gates'.")
+        return
+
+    movements = MergeMovements(llista_vuelos, llista_sortides)
+
+    if movements == -1:
+        messagebox.showerror("Error", "No s'han pogut combinar els moviments.")
+        return
+
+    fig = PlotControlTowerDashboard(bcn, movements)
+
+    if fig is None:
+        messagebox.showerror("Error", "No hi ha gates disponibles per calcular el dashboard.")
+        return
+
+    mostrar_figura(fig)
+    messagebox.showinfo("Control Tower", "Dashboard operatiu generat correctament.")
+
 def mostrar_figura(fig):
     global current_canvas# que al inicio es none
 
@@ -195,7 +289,6 @@ def PlotFlightsType_embedded():
 #para LEBL.py---------------------------------------------------------------------------------------------------
 def PlotTerminal(name):
     global bcn
-
     if not bcn:
         messagebox.showwarning("Atenció", "Carrega LEBL primer")
         return
@@ -209,13 +302,53 @@ def PlotTerminal(name):
 
     mostrar_figura(fig)
 
+def PlotTerminalDinamica(name):
+    global bcn, llista_vuelos, llista_sortides, gates_assignats
 
+    if not bcn:
+        messagebox.showwarning("Atenció", "Carrega LEBL primer")
+        return
+    if not llista_vuelos:
+        messagebox.showwarning("Atenció", "Primer has de carregar els vols diaris.")
+        return
+    if not llista_sortides:
+        messagebox.showwarning("Atenció", "Primer has de carregar els vols de sortida.")
+        return
+    if not gates_assignats:
+        messagebox.showwarning("Atenció", "Primer has de prémer 'Assignar vols a gates'.")
+        return
+
+    movements = MergeMovements(llista_vuelos, llista_sortides)
+    if movements == -1:
+        messagebox.showerror("Error", "No s'han pogut combinar els moviments")
+        return
+
+    # limpiar SOLO gráfico, no UI completa
+    for widget in graph_frame.winfo_children():
+        widget.destroy()
+
+    chart_area = Frame(graph_frame, bg="white")
+    chart_area.pack(fill=BOTH, expand=True)
+
+    def Actualitzar(hora):
+        fig = PlotTerminalAtHour(bcn,movements,name,int(float(hora)))
+
+        # limpiar SOLO canvas, no slider
+        for w in chart_area.winfo_children():
+            w.destroy()
+
+        canvas = FigureCanvasTkAgg(fig, master=chart_area)
+        canvas.draw()
+        canvas.get_tk_widget().pack(fill=BOTH, expand=True)
+
+    slider = Scale(graph_frame,from_=0,to=23,orient=HORIZONTAL,command=Actualitzar,label="Hora del dia")
+    slider.pack(fill=X)
+    Actualitzar(0)
 
 def clear_graph():
     for widget in graph_frame.winfo_children():
         widget.destroy()
     Label(graph_frame, text="(Aquí aparecerán los gráficos)", font=("Arial", 14)).pack(expand=True)
-
 
 ## interfaz grafica
 window = Tk()
@@ -229,7 +362,7 @@ window.columnconfigure(1, weight=999)# zona de gráficos
 # zona donde esta el grafico (zona lateral)
 graph_frame = Frame(window, bg="white", relief="solid", bd=2)#relief soft significa q tendra borde delimitado
 graph_frame.grid(row=0, column=1, sticky="nsew")
-graph_frame.grid_propagate(False)# evita que se propague todo aquello que usando grid sea mayor
+graph_frame.grid_propagate(False) #evita que se propague todo aquello que usando grid sea mayor
 graph_frame.pack_propagate(False)# evita que se propague todo aquello que usando pack sea mayor
 
 # parte lateral izquierda
@@ -249,10 +382,9 @@ download_frame.grid(row=0, column=0, sticky="nsew", padx=5, pady=5)
 
 Button(download_frame, text="Carregar base d'aeroports", command=carregar_aeroports).pack(fill=BOTH, expand=True, pady=4)
 Button(download_frame, text="Carregar vols diaris", command=carregar_vuelos).pack(fill=BOTH, expand=True, pady=4)
+Button(download_frame, text="Carregar vols de sortida", command=carregar_sortides).pack(fill=BOTH, expand=True, pady=4)
 Button(download_frame, text="Localització Google Earth", command=generar_kml).pack(fill=BOTH, expand=True, pady=4)
 Button(download_frame, text="Veure recorregut Google Earth", command=generar_mapa_vuelos).pack(fill=BOTH, expand=True, pady=4)
-
-
 
 # subtema de botones
 
@@ -271,9 +403,10 @@ lebl_frame.grid(row=2, column=0, sticky="nsew", padx=5, pady=5)
 
 Button(lebl_frame, text="Carregar estructura LEBL", command=carregar_estructura_lebl).pack(fill=BOTH, expand=True, pady=4)
 Button(lebl_frame, text="Assignar vols a gates",command=assignar_vols_gates).pack(fill=BOTH, expand=True, pady=4)
-Button(lebl_frame, text="Terminal T1", command=lambda: PlotTerminal("T1")).pack(fill=BOTH, expand=True, pady=4)
-Button(lebl_frame, text="Terminal T2", command=lambda: PlotTerminal("T2")).pack(fill=BOTH, expand=True, pady=4)
-
+Button(lebl_frame, text="Terminal T1", command=lambda: PlotTerminalDinamica("T1")).pack(fill=BOTH, expand=True, pady=4)
+Button(lebl_frame, text="Terminal T2", command=lambda: PlotTerminalDinamica("T2")).pack(fill=BOTH, expand=True, pady=4)
+Button(lebl_frame, text="Simulació Dinàmica", command=executar_simulacio_dinamica).pack(fill=BOTH, expand=True, pady=4)
+Button(lebl_frame,text="Control Tower Dashboard",command=executar_control_tower).pack(fill=BOTH, expand=True, pady=4)
 
 # SALIR
 exit_frame = Frame(bottom_frame)

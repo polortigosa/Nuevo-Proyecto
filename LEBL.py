@@ -1,4 +1,5 @@
 from aircraft import *
+import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 
 class BarcelonaAP:
@@ -275,3 +276,255 @@ def PlotTerminal_visual(bcn, name):
 
     plt.tight_layout()
     return fig
+
+def FreeGate(bcn, aircraft_id):
+    for terminal in bcn.terminals:
+        for area in terminal.boarding_areas:
+            for gate in area.gates:
+                if gate.occupied and gate.aircraft_id == aircraft_id:
+                    gate.occupied = False
+                    gate.aircraft_id = ""
+                    return 1
+    return -1
+
+def AssignNightGates(bcn, night_aircrafts):
+    # Si la lista está vacía devolvemos error
+    if not night_aircrafts:
+        return -1
+
+    for ac in night_aircrafts:
+
+        # Solo deben procesarse vuelos nocturnos de salida.
+        # Si tiene datos de llegada se ignora.
+        if ac.time:
+            continue
+
+        # Para que la función AssignGate funcione con aviones nocturnos:
+        # como no tienen un 'origin' inicial ya que se han quedado
+        # en el aeropuerto por la noche, copiamos temporalmente su
+        # 'destino' al 'origin' para estudiar correctamente si van
+        # a zona Schengen o No-Schengen al despegar.
+        original_origin = ac.origin
+        ac.origin = ac.destino
+        AssignGate(bcn, ac)
+        ac.origin = original_origin
+
+    return 1
+
+
+def AssignGatesAtTime(bcn, movements, h):
+    vuelos_sin_gate = 0
+
+    # 1. Liberar puertas de los aviones que despegan a la hora 'h'
+    for ac in movements:
+        if ac.salida:
+            try:
+                hour_salida = int(ac.salida.split(":")[0])
+                if hour_salida == h:
+                    FreeGate(bcn, ac.id)
+            except:
+                pass
+
+    # 2. Asignar puertas a los aviones que aterrizan a la hora 'h'
+    for ac in movements:
+        if ac.time:
+            try:
+                hour_arrival = int(ac.time.split(":")[0])
+                if hour_arrival == h:
+                    resultado = AssignGate(bcn, ac)
+                    if resultado == -1:
+                        vuelos_sin_gate += 1
+            except:
+                pass
+
+    return vuelos_sin_gate
+
+def BuildAirportStateAtHour(bcn, movements, hour):
+
+    # Reiniciar todas las puertas
+    for terminal in bcn.terminals:
+        for area in terminal.boarding_areas:
+            for gate in area.gates:
+                gate.occupied = False
+                gate.aircraft_id = ""
+
+    # Ubicar los aviones nocturnos que ya están en las puertas al inicio del día
+    nocturnos = NightAircraft(movements)
+
+    if nocturnos != -1:
+        AssignNightGates(bcn, nocturnos)
+
+    # Ejecutar la simulación desde las 00:00 hasta la hora indicada
+    for h in range(hour + 1):
+        AssignGatesAtTime(bcn, movements, h)
+    return bcn
+
+def PlotTerminalAtHour(bcn, movements, terminal_name, hour):
+    BuildAirportStateAtHour(bcn, movements, hour)
+
+    return PlotTerminal_visual(bcn, terminal_name)
+
+def PlotDayOccupancy(bcn, movements):
+
+    # Reiniciar todas las puertas a libres antes de simular las 24 horas
+    for terminal in bcn.terminals:
+        for area in terminal.boarding_areas:
+            for gate in area.gates:
+                gate.occupied = False
+                gate.aircraft_id = ""
+
+    # Ubicar los aviones nocturnos que ya están en las puertas al inicio del día
+    nocturnos = NightAircraft(movements)
+
+    if nocturnos != -1:
+        AssignNightGates(bcn, nocturnos)
+
+    ocupacion_por_hora = []
+    vuelos_sin_gate_por_hora = []
+
+    # Ejecutar la simulación paso a paso de 0 a 23 horas
+    for h in range(24):
+
+        rechazados = AssignGatesAtTime(bcn, movements, h)
+
+        # Contar cuántas puertas están ocupadas al terminar la hora actual
+        count = 0
+
+        for terminal in bcn.terminals:
+            for area in terminal.boarding_areas:
+                for gate in area.gates:
+                    if gate.occupied:
+                        count += 1
+
+        ocupacion_por_hora.append(count)
+        vuelos_sin_gate_por_hora.append(rechazados)
+
+    # Generar la gráfica solicitada
+    fig, ax = plt.subplots(figsize=(10, 5))
+
+    ax.bar(range(24),ocupacion_por_hora,alpha=0.5,label='Puertas Ocupadas')
+
+    ax.plot(range(24),ocupacion_por_hora,marker='o',linewidth=2,label='Evolución Temporal')
+
+    ax.plot(range(24),vuelos_sin_gate_por_hora,marker='s',linewidth=2,label='Aviones sin gate')
+
+    ax.set_xlabel("Hora del día")
+    ax.set_ylabel("Cantidad")
+    ax.set_title("Ocupación Dinámica del Aeropuerto LEBL (24h)")
+    ax.set_xticks(range(24))
+    ax.grid(True, linestyle='--', alpha=0.5)
+    ax.legend()
+
+    return fig
+
+
+def PlotControlTowerDashboard(bcn, movements):
+
+    # Reiniciamos todas las puertas
+    for terminal in bcn.terminals:
+        for area in terminal.boarding_areas:
+            for gate in area.gates:
+                gate.occupied = False
+                gate.aircraft_id = ""
+
+    total_gates = 0
+
+    for terminal in bcn.terminals:
+        for area in terminal.boarding_areas:
+            total_gates += len(area.gates)
+
+    if total_gates == 0:
+        return None
+
+    # Aviones nocturnos
+    nocturnos = NightAircraft(movements)
+
+    if nocturnos != -1:
+        AssignNightGates(bcn, nocturnos)
+
+    ocupacion_por_hora = []
+    vuelos_sin_gate_por_hora = []
+
+    for h in range(24):
+
+        vuelos_sin_gate = AssignGatesAtTime(bcn, movements, h)
+
+        ocupados = 0
+
+        for terminal in bcn.terminals:
+            for area in terminal.boarding_areas:
+                for gate in area.gates:
+                    if gate.occupied:
+                        ocupados += 1
+
+        ocupacion_por_hora.append(ocupados)
+        vuelos_sin_gate_por_hora.append(vuelos_sin_gate)
+
+    max_ocupacion = max(ocupacion_por_hora)
+    hora_pico = ocupacion_por_hora.index(max_ocupacion)
+
+    saturacion = (max_ocupacion / total_gates) * 100
+    total_sin_gate = sum(vuelos_sin_gate_por_hora)
+
+    # Gráfico
+    fig = plt.figure(figsize=(13, 7))
+
+    ax1 = fig.add_subplot(2, 2, 1)
+    ax1.bar(range(24), ocupacion_por_hora)
+    ax1.plot(range(24), ocupacion_por_hora, marker="o")
+    ax1.axvline(hora_pico, linestyle="--")
+    ax1.set_title("Ocupació de gates durant el dia")
+    ax1.set_xlabel("Hora")
+    ax1.set_ylabel("Gates ocupats")
+    ax1.set_xticks(range(24))
+    ax1.grid(True, linestyle="--", alpha=0.4)
+
+    ax2 = fig.add_subplot(2, 2, 2)
+    ax2.bar(range(24), vuelos_sin_gate_por_hora)
+    ax2.set_title("Vols sense gate assignada")
+    ax2.set_xlabel("Hora")
+    ax2.set_ylabel("Vols rebutjats")
+    ax2.set_xticks(range(24))
+    ax2.grid(True, linestyle="--", alpha=0.4)
+
+    # Ocupación por terminal al final de la simulación
+    terminal_names = []
+    terminal_values = []
+
+    for terminal in bcn.terminals:
+
+        ocupados_terminal = 0
+
+        for area in terminal.boarding_areas:
+            for gate in area.gates:
+                if gate.occupied:
+                    ocupados_terminal += 1
+
+        terminal_names.append(terminal.name)
+        terminal_values.append(ocupados_terminal)
+
+    ax3 = fig.add_subplot(2, 2, 3)
+    ax3.bar(terminal_names, terminal_values)
+    ax3.set_title("Ocupació final per terminal")
+    ax3.set_xlabel("Terminal")
+    ax3.set_ylabel("Gates ocupats")
+    ax3.grid(True, axis="y", linestyle="--", alpha=0.4)
+
+    ax4 = fig.add_subplot(2, 2, 4)
+    ax4.axis("off")
+
+    texto = ("CONTROL TOWER DASHBOARD\n\n"f"Hora crítica: {hora_pico}:00\n\n"f"Màxima ocupació: {max_ocupacion}/{total_gates} gates\n\n"
+        f"Saturació màxima: {saturacion:.1f}%\n\n"f"Vols sense gate: {total_sin_gate}")
+
+    ax4.text(0.05,0.95,texto,va="top",ha="left",fontsize=13,bbox=dict(boxstyle="round",facecolor="#f2f2f2",edgecolor="black"))
+
+    fig.suptitle("Control Tower Dashboard - Aeroport LEBL",fontsize=16,fontweight="bold")
+    plt.tight_layout()
+    return fig
+
+def ResetAirport(bcn):
+    for terminal in bcn.terminals:
+        for area in terminal.boarding_areas:
+            for gate in area.gates:
+                gate.occupied = False
+                gate.aircraft_id = ""

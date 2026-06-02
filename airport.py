@@ -6,7 +6,6 @@ from tkinter import  messagebox
 # PAS 1, 2 i 3: CODI ORIGINAL DEL TEU COMPANY (Sense tocar res)
 # ==========================================================
 
-
 class Airport:
     def __init__(self, icao_code, latitude, longitude):
         self.icao_code = icao_code
@@ -146,4 +145,3 @@ def MapAirports(airports):
 
     f.write('</Document>\n</kml>')
     f.close()
-
